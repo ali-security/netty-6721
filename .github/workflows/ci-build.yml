@@ -36,15 +36,19 @@ jobs:
         include:
           - setup: linux-x86_64-java11
             docker-compose-build: "-f docker/docker-compose.yaml -f docker/docker-compose.centos-6.111.yaml build"
-            docker-compose-run: "-f docker/docker-compose.yaml -f docker/docker-compose.centos-6.111.yaml run build"
+            # Bind a host directory to /code in the container to extract built jar files from all modules
+            # This will allow us to access the built jars after the docker-compose run
+
+            docker-compose-run: "-f docker/docker-compose.yaml -f docker/docker-compose.centos-6.111.yaml run -v ${{ github.workspace }}/extracted-jars:/extracted-jars build"
+            # docker-compose-run: "-f docker/docker-compose.yaml -f docker/docker-compose.centos-6.111.yaml run build"
 
     name: ${{ matrix.setup }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       # Cache .m2/repository
       - name: Cache local Maven repository
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ matrix.setup }}-${{ hashFiles('**/pom.xml') }}
@@ -61,11 +65,14 @@ jobs:
             build-docker-cache-${{ matrix.setup }}-
             build-docker-cache-
 
+      - name: Set up Docker Compose
+        uses: docker/setup-compose-action@v1
+
       - name: Build docker image
-        run: docker-compose ${{ matrix.docker-compose-build }}
+        run: docker compose ${{ matrix.docker-compose-build }}
 
       - name: Build project without leak detection
-        run: docker-compose ${{ matrix.docker-compose-run }} | tee build.output
+        run: docker compose ${{ matrix.docker-compose-run }} | tee build.output
 
       - name: Checking for test failures
         run: ./.github/scripts/check_build_result.sh build.output
@@ -73,10 +80,11 @@ jobs:
       - name: Checking bom dependency versions
         run: ./.github/scripts/check_bom_dependencies.sh
 
-      - uses: actions/upload-artifact@v2
-        if: ${{ failure() }}
+      - uses: actions/upload-artifact@v4
+        # if: ${{ failure() }}
         with:
           name: target
           path: |
-            **/target/surefire-reports/
-            **/hs_err*.log
+            # **/target/surefire-reports/
+            # **/hs_err*.log
+            /extracted-jars/**/*.jar
